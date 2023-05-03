@@ -1,4 +1,4 @@
-export { CollectionAPI } from './collection';
+export { CollectionAPI, findDistroBasePathByRepo } from './collection';
 export { NamespaceAPI } from './namespace';
 export {
   NamespaceType,
@@ -7,11 +7,12 @@ export {
 } from './response-types/namespace';
 export {
   CollectionDetailType,
-  CollectionExcludesType,
   CollectionListType,
   CollectionUploadType,
   CollectionUsedByDependencies,
   CollectionVersion,
+  CollectionVersionSearch,
+  CollectionVersionContentType,
   ContentSummaryType,
   DocsBlobType,
   PluginContentType,
@@ -37,12 +38,9 @@ export { TaskAPI } from './task';
 export { GroupObjectPermissionType } from './response-types/permissions';
 export { GroupAPI } from './group';
 export { RoleAPI } from './role';
-export { RemoteAPI } from './remotes';
 export { ApplicationInfoAPI } from './application-info';
 export { RemoteType } from './response-types/remote';
-export { DistributionAPI } from './distribution';
 export { MyDistributionAPI } from './my-distribution';
-export { DistributionType } from './response-types/distribution';
 export { ExecutionEnvironmentAPI } from './execution-environment';
 export { ExecutionEnvironmentRegistryAPI } from './execution-environment-registry';
 export {
@@ -62,6 +60,7 @@ export { ControllerAPI } from './controller';
 export { TaskManagementAPI } from './task-management';
 export { GroupRoleAPI } from './group-role';
 export { GenericPulpAPI } from './generic-pulp';
+export { PulpAPI } from './pulp';
 export { SettingsAPI } from './settings';
 export { SettingsType } from './response-types/settings';
 export { SignCollectionAPI } from './sign-collections';
@@ -69,6 +68,14 @@ export { SigningServiceAPI, SigningServiceType } from './signing-service';
 export { RoleType, GroupRoleType } from './response-types/role';
 export { CertificateUploadAPI } from './certificate-upload';
 export { Repositories } from './repositories';
+export { AnsibleDistributionAPI } from './ansible-distribution';
+export { AnsibleRemoteAPI } from './ansible-remote';
+export { AnsibleRemoteType } from './response-types/ansible-remote';
+export { AnsibleRepositoryAPI } from './ansible-repository';
+export {
+  AnsibleRepositoryType,
+  AnsibleRepositoryVersionType,
+} from './response-types/ansible-repository';
 export { SignContainersAPI } from './sign-containers';
 export {
   LegacyRoleDetailType,
@@ -78,3 +85,5 @@ export {
   LegacyNamespaceDetailType,
   LegacyNamespaceListType,
 } from './response-types/legacy-namespace';
+
+export { WisdomDenyIndexAPI } from './wisdom-deny-index';

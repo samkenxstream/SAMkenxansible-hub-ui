@@ -14,7 +14,8 @@ import ReactMarkdown from 'react-markdown';
 import { Link, Navigate } from 'react-router-dom';
 import {
   CollectionAPI,
-  CollectionListType,
+  CollectionVersionAPI,
+  CollectionVersionSearch,
   GroupType,
   MyNamespaceAPI,
   NamespaceAPI,
@@ -23,6 +24,7 @@ import {
   SignCollectionAPI,
 } from 'src/api';
 import {
+  AccessTab,
   AlertList,
   AlertType,
   ClipboardCopy,
@@ -34,15 +36,13 @@ import {
   ImportModal,
   LoadingPageWithHeader,
   Main,
-  OwnersTab,
   Pagination,
   PartnerHeader,
-  RepoSelector,
   SignAllCertificatesModal,
   StatefulDropdown,
+  WisdomModal,
   closeAlertMixin,
 } from 'src/components';
-import { Constants } from 'src/constants';
 import { AppContext } from 'src/loaders/app-context';
 import { Paths, formatPath, namespaceBreadcrumb } from 'src/paths';
 import { RouteProps, withRouter } from 'src/utilities';
@@ -60,7 +60,8 @@ import './namespace-detail.scss';
 
 interface IState {
   canSign: boolean;
-  collections: CollectionListType[];
+  collections: CollectionVersionSearch[];
+  allCollections: CollectionVersionSearch[];
   namespace: NamespaceType;
   params: {
     sort?: string;
@@ -75,15 +76,15 @@ interface IState {
   itemCount: number;
   showImportModal: boolean;
   warning: string;
-  updateCollection: CollectionListType;
+  updateCollection: CollectionVersionSearch;
   showControls: boolean;
   isOpenNamespaceModal: boolean;
   isOpenSignModal: boolean;
-  isNamespaceEmpty: boolean;
+  isOpenWisdomModal: boolean;
   confirmDelete: boolean;
   isNamespacePending: boolean;
   alerts: AlertType[];
-  deleteCollection: CollectionListType;
+  deleteCollection: CollectionVersionSearch;
   isDeletionPending: boolean;
   showGroupRemoveModal?: GroupType;
   showGroupSelectWizard?: { group?: GroupType; roles?: RoleType[] };
@@ -92,11 +93,7 @@ interface IState {
   group: GroupType;
 }
 
-interface IProps extends RouteProps {
-  selectedRepo: string;
-}
-
-export class NamespaceDetail extends React.Component<IProps, IState> {
+export class NamespaceDetail extends React.Component<RouteProps, IState> {
   nonAPIParams = ['tab', 'group'];
 
   // namespace is a positional url argument, so don't include it in the
@@ -111,10 +108,14 @@ export class NamespaceDetail extends React.Component<IProps, IState> {
     ]);
 
     params['namespace'] = props.routeParams.namespace;
+    if (props.routeParams.repo && !params['repository_name']) {
+      params['repository_name'] = props.routeParams.repo;
+    }
 
     this.state = {
       canSign: false,
       collections: [],
+      allCollections: [],
       namespace: null,
       params: params,
       redirect: null,
@@ -125,7 +126,7 @@ export class NamespaceDetail extends React.Component<IProps, IState> {
       showControls: false, // becomes true when my-namespaces doesn't 404
       isOpenNamespaceModal: false,
       isOpenSignModal: false,
-      isNamespaceEmpty: false,
+      isOpenWisdomModal: false,
       confirmDelete: false,
       isNamespacePending: false,
       alerts: [],
@@ -142,23 +143,35 @@ export class NamespaceDetail extends React.Component<IProps, IState> {
   componentDidMount() {
     this.load();
 
+    this.loadAllCollections();
+
     this.setState({ alerts: this.context.alerts || [] });
     this.context.setAlerts([]);
   }
 
   componentDidUpdate(prevProps) {
-    if (prevProps.location.search !== this.props.location.search) {
-      const params = ParamHelper.parseParamString(this.props.location.search, [
-        'page',
-        'page_size',
-      ]);
+    const params = ParamHelper.parseParamString(this.props.location.search, [
+      'page',
+      'page_size',
+    ]);
 
+    if (prevProps.location.search !== this.props.location.search) {
       params['namespace'] = this.props.routeParams.namespace;
 
       this.setState({
         params,
         group: this.filterGroup(params['group'], this.state.namespace.groups),
       });
+    }
+
+    if (
+      prevProps.routeParams.repo !== this.props.routeParams.repo &&
+      this.props.routeParams.repo &&
+      (!params['repository_name'] ||
+        params['repository_name'] === prevProps.routeParams.repo)
+    ) {
+      params['repository_name'] = this.props.routeParams.repo;
+      this.setState({ params });
     }
   }
 
@@ -204,6 +217,7 @@ export class NamespaceDetail extends React.Component<IProps, IState> {
       warning,
       updateCollection,
       isOpenNamespaceModal,
+      isOpenWisdomModal,
       confirmDelete,
       isNamespacePending,
       alerts,
@@ -223,7 +237,7 @@ export class NamespaceDetail extends React.Component<IProps, IState> {
       { id: 'collections', name: t`Collections` },
       showControls && { id: 'cli-configuration', name: t`CLI configuration` },
       namespace.resources && { id: 'resources', name: t`Resources` },
-      { id: 'owners', name: t`Namespace owners` },
+      { id: 'access', name: t`Access` },
     ].filter(Boolean);
 
     const tab = params['tab'] || 'collections';
@@ -233,36 +247,41 @@ export class NamespaceDetail extends React.Component<IProps, IState> {
       {
         name: namespace.name,
         url:
-          tab === 'owners'
-            ? formatPath(Paths.namespaceByRepo, {
-                repo: this.context.selectedRepo,
+          tab === 'access'
+            ? formatPath(Paths.namespaceDetail, {
                 namespace: namespace.name,
               })
             : null,
       },
-      tab === 'owners'
+      tab === 'access'
         ? {
-            name: t`Namespace owners`,
+            name: t`Access`,
             url: params.group
               ? formatPath(
-                  Paths.namespaceByRepo,
+                  Paths.namespaceDetail,
                   {
-                    repo: this.context.selectedRepo,
                     namespace: namespace.name,
                   },
-                  { tab: 'owners' },
+                  { tab: 'access' },
                 )
               : null,
           }
         : null,
-      tab === 'owners' && params.group
+      tab === 'access' && params.group
         ? { name: t`Group ${params.group}` }
         : null,
     ].filter(Boolean);
 
     const repositoryUrl = getRepoUrl();
 
-    const noData = itemCount === 0 && !filterIsSet(params, ['keywords']);
+    const noData =
+      itemCount === 0 &&
+      !filterIsSet(params, [
+        'is_signed',
+        'keywords',
+        'repository_name',
+        'tags',
+      ]);
 
     const updateParams = (params) =>
       this.updateParams(params, () => this.loadCollections());
@@ -284,9 +303,11 @@ export class NamespaceDetail extends React.Component<IProps, IState> {
         'galaxy.change_namespace',
       ) || hasPermission('galaxy.change_namespace');
 
-    // remove ?group (owners tab) when switching tabs
+    // remove ?group (access tab) when switching tabs
     const tabParams = { ...params };
     delete tabParams.group;
+
+    const repository = params['repository_name'] || null;
 
     return (
       <React.Fragment>
@@ -306,11 +327,12 @@ export class NamespaceDetail extends React.Component<IProps, IState> {
           }
           // onCancel
           setOpen={(isOpen, warn) => this.toggleImportModal(isOpen, warn)}
-          collection={updateCollection}
+          collection={updateCollection?.collection_version}
           namespace={namespace.name}
         />
         <DeleteCollectionModal
           deleteCollection={deleteCollection}
+          collections={collections}
           isDeletionPending={isDeletionPending}
           confirmDelete={confirmDelete}
           setConfirmDelete={(confirmDelete) => this.setState({ confirmDelete })}
@@ -322,7 +344,6 @@ export class NamespaceDetail extends React.Component<IProps, IState> {
                 setState: (state) => this.setState(state),
                 load: () => this.load(),
                 redirect: false,
-                selectedRepo: this.context.selectedRepo,
                 addAlert: (alert) => this.addAlert(alert),
               }),
             )
@@ -351,6 +372,14 @@ export class NamespaceDetail extends React.Component<IProps, IState> {
             </>
           </DeleteModal>
         )}
+        {isOpenWisdomModal && (
+          <WisdomModal
+            addAlert={(alert) => this.addAlert(alert)}
+            closeAction={() => this.setState({ isOpenWisdomModal: false })}
+            scope={'namespace'}
+            reference={this.state.namespace.name}
+          />
+        )}
         {warning ? (
           <Alert
             className='hub-c-alert-namespace'
@@ -370,13 +399,6 @@ export class NamespaceDetail extends React.Component<IProps, IState> {
           params={tabParams}
           updateParams={(p) => this.updateParams(p)}
           pageControls={this.renderPageControls()}
-          contextSelector={
-            <RepoSelector
-              path={this.props.routePath}
-              pathParams={{ namespace: namespace.name }}
-              selectedRepo={this.context.selectedRepo}
-            />
-          }
           filters={
             tab === 'collections' ? (
               <div className='hub-toolbar-wrapper namespace-detail'>
@@ -424,13 +446,11 @@ export class NamespaceDetail extends React.Component<IProps, IState> {
                   ignoredParams={ignoredParams}
                   collections={collections}
                   itemCount={itemCount}
-                  showControls={this.state.showControls}
-                  repo={this.context.selectedRepo}
-                  renderCollectionControls={(collection) =>
-                    this.renderCollectionControls(collection)
-                  }
                   displaySignatures={
                     this.context.featureFlags.display_signatures
+                  }
+                  collectionControls={(collection) =>
+                    this.renderCollectionControls(collection)
                   }
                 />
               </section>
@@ -460,8 +480,8 @@ export class NamespaceDetail extends React.Component<IProps, IState> {
             </section>
           ) : null}
           {tab === 'resources' ? this.renderResources(namespace) : null}
-          {tab === 'owners' ? (
-            <OwnersTab
+          {tab === 'access' ? (
+            <AccessTab
               showGroupRemoveModal={this.state.showGroupRemoveModal}
               showGroupSelectWizard={this.state.showGroupSelectWizard}
               showRoleRemoveModal={this.state.showRoleRemoveModal}
@@ -539,8 +559,7 @@ export class NamespaceDetail extends React.Component<IProps, IState> {
                   stateUpdate: { showRoleRemoveModal: null },
                 });
               }}
-              urlPrefix={formatPath(Paths.namespaceByRepo, {
-                repo: this.context.selectedRepo,
+              urlPrefix={formatPath(Paths.namespaceDetail, {
                 namespace: namespace.name,
               })}
             />
@@ -550,20 +569,19 @@ export class NamespaceDetail extends React.Component<IProps, IState> {
           <SignAllCertificatesModal
             name={this.state.namespace.name}
             isOpen={this.state.isOpenSignModal}
-            onSubmit={() => {
-              this.signAllCertificates(namespace);
-            }}
-            onCancel={() => {
-              this.setState({ isOpenSignModal: false });
-            }}
+            onSubmit={() => this.signAllCertificates(namespace, repository)}
+            onCancel={() => this.setState({ isOpenSignModal: false })}
           />
         )}
       </React.Fragment>
     );
   }
 
-  private handleCollectionAction(id, action) {
-    const collection = this.state.collections.find((x) => x.id === id);
+  private handleCollectionAction(pulp_href, action) {
+    const collection = this.state.collections.find(
+      (c) => c.collection_version.pulp_href === pulp_href,
+    );
+    const { name } = collection.collection_version;
 
     switch (action) {
       case 'upload':
@@ -578,21 +596,17 @@ export class NamespaceDetail extends React.Component<IProps, IState> {
             ...this.state.alerts,
             {
               variant: 'info',
-              title: t`Deprecation status update starting for collection "${collection.name}".`,
+              title: t`Deprecation status update starting for collection "${name}".`,
             },
           ],
         });
-        CollectionAPI.setDeprecation(
-          collection,
-          !collection.deprecated,
-          this.context.selectedRepo,
-        )
+        CollectionAPI.setDeprecation(collection)
           .then((result) => {
             const taskId = parsePulpIDFromURL(result.data.task);
             return waitForTask(taskId).then(() => {
-              const title = collection.deprecated
-                ? t`Collection "${collection.name}" has been successfully undeprecated.`
-                : t`Collection "${collection.name}" has been successfully deprecated.`;
+              const title = collection.is_deprecated
+                ? t`Collection "${name}" has been successfully undeprecated.`
+                : t`Collection "${name}" has been successfully deprecated.`;
               this.setState({
                 alerts: [
                   ...this.state.alerts,
@@ -622,31 +636,32 @@ export class NamespaceDetail extends React.Component<IProps, IState> {
     );
   }
 
-  private signAllCertificates(namespace: NamespaceType) {
+  private signAllCertificates(namespace: NamespaceType, repository: string) {
     const errorAlert = (status: string | number = 500): AlertType => ({
       variant: 'danger',
       title: t`Failed to sign all collections.`,
       description: t`API Error: ${status}`,
     });
 
-    this.setState({
-      alerts: [
-        ...this.state.alerts,
-        {
-          id: 'loading-signing',
-          variant: 'success',
-          title: t`Signing started for all collections in namespace "${namespace.name}".`,
-        },
-      ],
-      isOpenSignModal: false,
-    });
-
     SignCollectionAPI.sign({
       signing_service: this.context.settings.GALAXY_COLLECTION_SIGNING_SERVICE,
-      distro_base_path: this.context.selectedRepo,
+      repository_name: repository,
       namespace: namespace.name,
     })
       .then((result) => {
+        // FIXME: use taskAlert
+        this.setState({
+          alerts: [
+            ...this.state.alerts,
+            {
+              id: 'loading-signing',
+              variant: 'success',
+              title: t`Signing started for all collections in namespace "${namespace.name}".`,
+            },
+          ],
+          isOpenSignModal: false,
+        });
+
         waitForTask(result.data.task_id)
           .then(() => {
             this.load();
@@ -668,17 +683,17 @@ export class NamespaceDetail extends React.Component<IProps, IState> {
         // The request failed in the first place
         this.setState({
           alerts: [...this.state.alerts, errorAlert(error.response.status)],
+          isOpenSignModal: false,
         });
       });
   }
 
   private loadCollections() {
-    CollectionAPI.list(
-      {
-        ...ParamHelper.getReduced(this.state.params, this.nonAPIParams),
-      },
-      this.context.selectedRepo,
-    ).then((result) => {
+    CollectionVersionAPI.list({
+      ...ParamHelper.getReduced(this.state.params, this.nonAPIParams),
+      repository_label: '!hide_from_search',
+      namespace: this.props.routeParams.namespace,
+    }).then((result) => {
       this.setState({
         collections: result.data.data,
         itemCount: result.data.meta.count,
@@ -688,12 +703,12 @@ export class NamespaceDetail extends React.Component<IProps, IState> {
 
   private load() {
     Promise.all([
-      CollectionAPI.list(
-        {
-          ...ParamHelper.getReduced(this.state.params, this.nonAPIParams),
-        },
-        this.context.selectedRepo,
-      ),
+      CollectionVersionAPI.list({
+        ...ParamHelper.getReduced(this.state.params, this.nonAPIParams),
+        repository_label: '!hide_from_search',
+        namespace: this.props.routeParams.namespace,
+        is_highest: true,
+      }),
       NamespaceAPI.get(this.props.routeParams.namespace, {
         include_related: 'my_permissions',
       }),
@@ -726,47 +741,21 @@ export class NamespaceDetail extends React.Component<IProps, IState> {
             val[1].data['groups'],
           ),
         });
-
-        this.loadAllRepos(val[0].data.meta.count);
       })
       .catch(() => {
         this.setState({ redirect: formatPath(Paths.notFound) });
       });
   }
 
-  private loadAllRepos(currentRepoCount) {
-    // get collections in namespace from each repo
-    // except the one we already have
-    const repoPromises = Object.keys(Constants.REPOSITORYNAMES)
-      .filter((repo) => repo !== this.context.selectedRepo)
-      .map((repo) =>
-        CollectionAPI.list(
-          { namespace: this.props.routeParams.namespace },
-          repo,
-        ),
-      );
-
-    Promise.all(repoPromises)
-      .then((results) =>
-        this.setState({
-          isNamespaceEmpty:
-            results.every((val) => val.data.meta.count === 0) &&
-            currentRepoCount === 0,
-        }),
-      )
-      .catch((err) => {
-        const { status, statusText } = err.response;
-        this.setState({
-          alerts: [
-            ...this.state.alerts,
-            {
-              variant: 'danger',
-              title: t`Collection repositories could not be displayed.`,
-              description: errorMessage(status, statusText),
-            },
-          ],
-        });
+  private loadAllCollections() {
+    CollectionVersionAPI.list({
+      ...ParamHelper.getReduced(this.state.params, this.nonAPIParams),
+      namespace: this.props.routeParams.namespace,
+    }).then((result) => {
+      this.setState({
+        allCollections: result.data.data,
       });
+    });
   }
 
   private get updateParams() {
@@ -776,7 +765,9 @@ export class NamespaceDetail extends React.Component<IProps, IState> {
   private renderPageControls() {
     const { canSign, collections } = this.state;
     const { can_upload_signatures } = this.context.featureFlags;
+    const { ai_deny_index } = this.context.featureFlags;
     const { hasPermission } = this.context;
+    const repository = this.state.params['repository_name'] || null;
 
     const dropdownItems = [
       <DropdownItem
@@ -793,7 +784,7 @@ export class NamespaceDetail extends React.Component<IProps, IState> {
       />,
       hasPermission('galaxy.delete_namespace') && (
         <React.Fragment key={'2'}>
-          {this.state.isNamespaceEmpty ? (
+          {this.state.allCollections.length === 0 ? (
             <DropdownItem
               onClick={() => this.setState({ isOpenNamespaceModal: true })}
             >
@@ -832,13 +823,31 @@ export class NamespaceDetail extends React.Component<IProps, IState> {
           </Link>
         }
       />,
-      canSign && !can_upload_signatures && (
+      canSign &&
+        !can_upload_signatures &&
+        (repository ? (
+          <DropdownItem
+            key='sign-collections'
+            data-cy='sign-all-collections-button'
+            onClick={() => this.setState({ isOpenSignModal: true })}
+          >
+            {t`Sign all collections in ${repository}`}
+          </DropdownItem>
+        ) : (
+          <DropdownItem
+            key='sign-collections'
+            isDisabled
+            description={t`Please select a repository filter`}
+          >
+            {t`Sign all collections`}
+          </DropdownItem>
+        )),
+      ai_deny_index && (
         <DropdownItem
-          key='sign-collections'
-          data-cy='sign-all-collections-button'
-          onClick={() => this.setState({ isOpenSignModal: true })}
+          key='wisdom-settings'
+          onClick={() => this.setState({ isOpenWisdomModal: true })}
         >
-          {t`Sign all collections`}
+          {t`Ansible Lightspeed settings`}
         </DropdownItem>
       ),
     ].filter(Boolean);
@@ -887,17 +896,14 @@ export class NamespaceDetail extends React.Component<IProps, IState> {
             confirmDelete: false,
             isNamespacePending: false,
           });
-          this.context.setAlerts([
-            ...this.context.alerts,
-            {
-              variant: 'success',
-              title: (
-                <Trans>
-                  Namespace &quot;{name}&quot; has been successfully deleted.
-                </Trans>
-              ),
-            },
-          ]);
+          this.context.queueAlert({
+            variant: 'success',
+            title: (
+              <Trans>
+                Namespace &quot;{name}&quot; has been successfully deleted.
+              </Trans>
+            ),
+          });
         })
         .catch((e) => {
           const { status, statusText } = e.response;
@@ -938,16 +944,29 @@ export class NamespaceDetail extends React.Component<IProps, IState> {
     return closeAlertMixin('alerts');
   }
 
-  private renderCollectionControls(collection: CollectionListType) {
+  private renderCollectionControls(collection: CollectionVersionSearch) {
     const { hasPermission } = this.context;
-    return (
-      <div style={{ display: 'flex', alignItems: 'center' }}>
+    const { showControls } = this.state;
+
+    if (!showControls) {
+      return;
+    }
+
+    return {
+      uploadButton: (
         <Button
-          onClick={() => this.handleCollectionAction(collection.id, 'upload')}
+          onClick={() =>
+            this.handleCollectionAction(
+              collection.collection_version.pulp_href,
+              'upload',
+            )
+          }
           variant='secondary'
         >
           {t`Upload new version`}
         </Button>
+      ),
+      dropdownMenu: (
         <StatefulDropdown
           items={[
             DeleteCollectionUtils.deleteMenuOption({
@@ -962,17 +981,20 @@ export class NamespaceDetail extends React.Component<IProps, IState> {
             }),
             <DropdownItem
               onClick={() =>
-                this.handleCollectionAction(collection.id, 'deprecate')
+                this.handleCollectionAction(
+                  collection.collection_version.pulp_href,
+                  'deprecate',
+                )
               }
               key='deprecate'
             >
-              {collection.deprecated ? t`Undeprecate` : t`Deprecate`}
+              {collection.is_deprecated ? t`Undeprecate` : t`Deprecate`}
             </DropdownItem>,
           ].filter(Boolean)}
           ariaLabel='collection-kebab'
         />
-      </div>
-    );
+      ),
+    };
   }
 }
 

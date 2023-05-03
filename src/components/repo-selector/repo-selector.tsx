@@ -1,88 +1,59 @@
-import { i18n } from '@lingui/core';
 import { t } from '@lingui/macro';
 import {
   Flex,
   FlexItem,
   InputGroup,
   InputGroupText,
-  Select,
-  SelectOption,
 } from '@patternfly/react-core';
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React from 'react';
 import { Constants } from 'src/constants';
-import { Paths, formatPath } from 'src/paths';
-import './repo-selector.scss';
+import { useContext } from 'src/loaders/app-context';
 
 interface IProps {
   selectedRepo: string;
-  // Path of the component that's using the component. This is required so that
-  // the url for the repo can be updated correctly.
-  path: Paths;
-  pathParams?: Record<string, string>;
-  isDisabled?: boolean;
 }
 
-export const RepoSelector = ({
-  selectedRepo,
-  path,
-  pathParams,
-  isDisabled,
-}: IProps) => {
-  const [selectExpanded, setSelectExpanded] = useState<boolean>(false);
-  const navigate = useNavigate();
+export const RepoSelector = ({ selectedRepo }: IProps) => {
+  const { featureFlags } = useContext();
 
-  const getRepoName = (repoName) => {
-    const repo = Constants.REPOSITORYNAMES[repoName];
-    return repo ? i18n._(repo) : repoName;
-  };
+  if (DEPLOYMENT_MODE === Constants.INSIGHTS_DEPLOYMENT_MODE) {
+    return null;
+  }
+  if (!featureFlags.display_repositories) {
+    return null;
+  }
 
-  const repoNames = Constants.REPOSITORYNAMES;
+  const repoName =
+    {
+      community: t`Community`,
+      published: t`Published`,
+      rejected: t`Rejected`,
+      'rh-certified': t`Red Hat Certified`,
+      staging: t`Staging`,
+      validated: t`Validated`,
+    }[selectedRepo] || selectedRepo;
 
   return (
-    <Flex>
-      <FlexItem>
-        <InputGroup>
-          <InputGroupText
-            style={{ paddingLeft: 0 }}
-            variant='plain'
-            className='hub-input-group-text-no-wrap'
-          >
-            {t`Filter by repository`}
-          </InputGroupText>
-          <Select
-            className='nav-select'
-            isDisabled={isDisabled}
-            isOpen={selectExpanded}
-            isPlain={false}
-            onSelect={(event: React.ChangeEvent<HTMLInputElement>) => {
-              const originalRepo = selectedRepo;
-              const newRepo = getRepoName(event.target.name);
-
-              setSelectExpanded(false);
-
-              if (newRepo !== originalRepo) {
-                const newPath = formatPath(path, {
-                  ...pathParams,
-                  repo: event.target.name,
-                });
-                navigate(newPath);
-              }
-            }}
-            onToggle={(isExpanded) => setSelectExpanded(isExpanded)}
-            selections={getRepoName(selectedRepo)}
-            variant='single'
-          >
-            {Object.keys(repoNames).map((option) => (
-              <SelectOption
-                name={option}
-                key={option}
-                value={i18n._(repoNames[option])}
-              />
-            ))}
-          </Select>
-        </InputGroup>
-      </FlexItem>
-    </Flex>
+    <div className='breadcrumb-container'>
+      <Flex>
+        <FlexItem>
+          <InputGroup>
+            <InputGroupText style={{ paddingLeft: 0 }} variant='plain'>
+              {t`Repository`}
+            </InputGroupText>
+            <InputGroupText
+              variant='plain'
+              style={{
+                backgroundColor: 'var(--pf-global--disabled-color--300)',
+                color: 'var(--pf-global--Color--100)',
+                height: '36px',
+              }}
+            >
+              {repoName}
+            </InputGroupText>
+          </InputGroup>
+        </FlexItem>
+      </Flex>
+    </div>
   );
 };

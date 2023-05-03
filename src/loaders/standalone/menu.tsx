@@ -12,6 +12,11 @@ import { reject, some } from 'lodash';
 import React, { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Paths, formatPath } from 'src/paths';
+import {
+  canViewAnsibleRemotes,
+  canViewAnsibleRepositories,
+  isLoggedIn,
+} from 'src/permissions';
 import { hasPermission } from 'src/utilities';
 
 const menuItem = (name, options = {}) => ({
@@ -31,13 +36,11 @@ const menuSection = (name, options = {}, items = []) => ({
   items,
 });
 
-function standaloneMenu({ repository }) {
+function standaloneMenu() {
   return [
     menuSection(t`Collections`, {}, [
       menuItem(t`Collections`, {
-        url: formatPath(Paths.searchByRepo, {
-          repo: repository || 'published',
-        }),
+        url: formatPath(Paths.collections),
         condition: ({ settings, user }) =>
           settings.GALAXY_ENABLE_UNAUTHENTICATED_COLLECTION_ACCESS ||
           !user.is_anonymous,
@@ -48,13 +51,17 @@ function standaloneMenu({ repository }) {
           settings.GALAXY_ENABLE_UNAUTHENTICATED_COLLECTION_ACCESS ||
           !user.is_anonymous,
       }),
-      menuItem(t`Repository Management`, {
-        condition: ({ user }) => !user.is_anonymous,
-        url: formatPath(Paths.repositories),
+      menuItem(t`Repositories`, {
+        condition: canViewAnsibleRepositories,
+        url: formatPath(Paths.ansibleRepositories),
       }),
-      menuItem(t`API token management`, {
+      menuItem(t`Remotes`, {
+        condition: canViewAnsibleRemotes,
+        url: formatPath(Paths.ansibleRemotes),
+      }),
+      menuItem(t`API token`, {
         url: formatPath(Paths.token),
-        condition: ({ user }) => !user.is_anonymous,
+        condition: isLoggedIn,
       }),
       menuItem(t`Approval`, {
         condition: (context) =>
@@ -93,7 +100,7 @@ function standaloneMenu({ repository }) {
     ),
     menuItem(t`Task Management`, {
       url: formatPath(Paths.taskList),
-      condition: ({ user }) => !user.is_anonymous,
+      condition: isLoggedIn,
     }),
     menuItem(t`Signature Keys`, {
       url: formatPath(Paths.signatureKeys),
@@ -107,6 +114,11 @@ function standaloneMenu({ repository }) {
       condition: ({ settings, user }) =>
         settings.GALAXY_ENABLE_UNAUTHENTICATED_COLLECTION_ACCESS ||
         !user.is_anonymous,
+    }),
+    menuItem(t`Terms of Use`, {
+      url: 'https://www.redhat.com/en/about/terms-use',
+      external: true,
+      condition: ({ featureFlags }) => featureFlags.legacy_roles,
     }),
     menuSection(t`User Access`, {}, [
       menuItem(t`Users`, {
@@ -210,16 +222,15 @@ function Menu({ items, context, expandedSections }) {
   );
 }
 
-export const StandaloneMenu = ({ repository, context }) => {
+export const StandaloneMenu = ({ context }) => {
   const [expandedSections, setExpandedSections] = useState([]);
 
   const location = useLocation();
   const [menu, setMenu] = useState([]);
 
   useEffect(() => {
-    setMenu(standaloneMenu({ repository }));
-  }, [repository]);
-
+    setMenu(standaloneMenu());
+  }, []);
   useEffect(() => {
     activateMenu(menu, location.pathname);
     setExpandedSections(

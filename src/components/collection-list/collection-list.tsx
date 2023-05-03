@@ -1,7 +1,7 @@
 import { t } from '@lingui/macro';
 import { DataList } from '@patternfly/react-core';
 import * as React from 'react';
-import { CollectionListType } from 'src/api';
+import { CollectionVersionSearch } from 'src/api';
 import {
   CollectionListItem,
   EmptyStateFilter,
@@ -11,7 +11,7 @@ import { ParamHelper } from 'src/utilities/param-helper';
 import './list.scss';
 
 interface IProps {
-  collections: CollectionListType[];
+  collections: CollectionVersionSearch[];
   displaySignatures: boolean;
   params: {
     sort?: string;
@@ -21,35 +21,36 @@ interface IProps {
   updateParams: (params) => void;
   itemCount: number;
   ignoredParams: string[];
-  showControls?: boolean;
-  repo?: string;
-  renderCollectionControls: (collection) => React.ReactNode;
+  collectionControls: (collection) => {
+    dropdownMenu?: React.ReactNode | null;
+    synclistSwitch?: React.ReactNode | null;
+    uploadButton?: React.ReactNode | null;
+  };
 }
 
 // only used in namespace detail, collections uses individual items
 export const CollectionList = (props: IProps) => {
   const {
     collections,
+    collectionControls,
     displaySignatures,
     params,
     updateParams,
     ignoredParams,
     itemCount,
-    showControls,
-    repo,
   } = props;
 
   return (
     <React.Fragment>
       <DataList aria-label={t`List of Collections`}>
         {collections.length > 0 ? (
-          collections.map((c) => (
+          collections.map((c, i) => (
             <CollectionListItem
-              controls={showControls ? props.renderCollectionControls(c) : null}
-              key={c.id}
-              {...c}
-              repo={repo}
+              key={i}
+              collection={c}
               displaySignatures={displaySignatures}
+              showNamespace
+              {...collectionControls(c)}
             />
           ))
         ) : (

@@ -1,16 +1,14 @@
 import { t } from '@lingui/macro';
 import { Constants } from 'src/constants';
-import { ParamHelper } from 'src/utilities';
+import { ParamHelper, ParamType } from 'src/utilities';
 
-export function formatPath(
-  path: Paths,
-  data = {},
-  params?: Record<string, string | boolean>,
-) {
-  // insights router has basename="/" or "/beta/", with hub under a nested "ansible/automation-hub" route - our urls are relative to that
+export function formatPath(path: Paths, data = {}, params?: ParamType) {
+  // insights router has basename="/", "/beta/" or "/preview/", with hub under a nested "ansible/automation-hub" route - our urls are relative to that
   let url =
     DEPLOYMENT_MODE === Constants.INSIGHTS_DEPLOYMENT_MODE
-      ? UI_BASE_PATH.replace('/beta/', '/').replace(/\/$/, '')
+      ? UI_BASE_PATH.replace('/preview/', '/')
+          .replace('/beta/', '/')
+          .replace(/\/$/, '')
       : '';
   url += (path as string) + '/';
 
@@ -38,8 +36,8 @@ export function formatEEPath(path, data, params?) {
       Paths.executionEnvironmentDetailActivitiesWithNamespace,
     [Paths.executionEnvironmentDetailImages]:
       Paths.executionEnvironmentDetailImagesWithNamespace,
-    [Paths.executionEnvironmentDetailOwners]:
-      Paths.executionEnvironmentDetailOwnersWithNamespace,
+    [Paths.executionEnvironmentDetailAccess]:
+      Paths.executionEnvironmentDetailAccessWithNamespace,
     [Paths.executionEnvironmentManifest]:
       Paths.executionEnvironmentManifestWithNamespace,
   };
@@ -58,14 +56,20 @@ export function formatEEPath(path, data, params?) {
 }
 
 export enum Paths {
+  ansibleRemoteDetail = '/ansible/remotes/:name',
+  ansibleRemoteEdit = '/ansible/remotes/:name/edit',
+  ansibleRemotes = '/ansible/remotes',
+  ansibleRepositories = '/ansible/repositories',
+  ansibleRepositoryDetail = '/ansible/repositories/:name',
+  ansibleRepositoryEdit = '/ansible/repositories/:name/edit',
   executionEnvironmentDetail = '/containers/:container',
   executionEnvironmentDetailWithNamespace = '/containers/:namespace/:container',
   executionEnvironmentDetailActivities = '/containers/:container/_content/activity',
   executionEnvironmentDetailActivitiesWithNamespace = '/containers/:namespace/:container/_content/activity',
   executionEnvironmentDetailImages = '/containers/:container/_content/images',
   executionEnvironmentDetailImagesWithNamespace = '/containers/:namespace/:container/_content/images',
-  executionEnvironmentDetailOwners = '/containers/:container/_content/owners',
-  executionEnvironmentDetailOwnersWithNamespace = '/containers/:namespace/:container/_content/owners',
+  executionEnvironmentDetailAccess = '/containers/:container/_content/access',
+  executionEnvironmentDetailAccessWithNamespace = '/containers/:namespace/:container/_content/access',
   executionEnvironmentManifest = '/containers/:container/_content/images/:digest',
   executionEnvironmentManifestWithNamespace = '/containers/:namespace/:container/_content/images/:digest',
   executionEnvironments = '/containers',
@@ -101,9 +105,10 @@ export enum Paths {
   collectionContentListByRepo = '/repo/:repo/:namespace/:collection/content',
   collectionImportLogByRepo = '/repo/:repo/:namespace/:collection/import-log',
   collectionDependenciesByRepo = '/repo/:repo/:namespace/:collection/dependencies',
+  collectionDistributionsByRepo = '/repo/:repo/:namespace/:collection/distributions',
   namespaceByRepo = '/repo/:repo/:namespace',
-  collection = '/:namespace/:collection',
   namespace = '/:namespace',
+  namespaceDetail = '/namespaces/:namespace',
   partners = '/partners',
   namespaces = '/namespaces',
   notFound = '/not-found',
@@ -114,9 +119,9 @@ export enum Paths {
   editUser = '/users/:userID/edit',
   userDetail = '/users/:userID',
   userProfileSettings = '/settings/user-profile',
-  repositories = '/repositories',
   taskList = '/tasks',
   signatureKeys = '/signature-keys',
+  collections = '/collections',
 }
 
 export const namespaceBreadcrumb = {

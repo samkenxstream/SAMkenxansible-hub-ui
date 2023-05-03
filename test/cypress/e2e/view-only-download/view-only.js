@@ -15,14 +15,17 @@ describe('view-only mode - with download', () => {
     ].forEach((item) => cy.menuPresent(item));
 
     [
-      'Collections > Repository Management',
-      'Collections > API token management',
+      'Collections > Repositories',
+      'Collections > Remotes',
+      'Collections > API token',
       'Collections > Approval',
       'Execution Environments > Execution Environments',
       'Execution Environments > Remote Registries',
       'Task Management',
+      'Signature Keys',
       'User Access > Users',
       'User Access > Groups',
+      'User Access > Roles',
     ].forEach((item) => cy.menuMissing(item));
 
     // login button in top right nav
@@ -55,7 +58,7 @@ describe('view-only mode - with download', () => {
   });
 
   it('gets Unauthorized elsewhere', () => {
-    cy.visit(`${uiPrefix}repositories`);
+    cy.visit(`${uiPrefix}ansible/repositories`);
     cy.contains('You do not have access to Automation Hub');
     cy.contains('.pf-c-button', 'Login');
   });

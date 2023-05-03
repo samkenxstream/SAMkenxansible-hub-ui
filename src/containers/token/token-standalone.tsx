@@ -24,7 +24,7 @@ interface IState {
   loadingToken: boolean;
 }
 
-class TokenPage extends React.Component<RouteProps, IState> {
+class TokenStandalone extends React.Component<RouteProps, IState> {
   constructor(props) {
     super(props);
 
@@ -47,7 +47,7 @@ class TokenPage extends React.Component<RouteProps, IState> {
           alerts={alerts}
           closeAlert={(i) => this.closeAlert(i)}
         ></AlertList>
-        <BaseHeader title={t`API token management`}></BaseHeader>
+        <BaseHeader title={t`API token`}></BaseHeader>
         <Main>
           {unauthorised ? (
             <EmptyStateUnauthorized />
@@ -139,6 +139,6 @@ class TokenPage extends React.Component<RouteProps, IState> {
   }
 }
 
-export default withRouter(TokenPage);
+export default withRouter(TokenStandalone);
 
-TokenPage.contextType = AppContext;
+TokenStandalone.contextType = AppContext;

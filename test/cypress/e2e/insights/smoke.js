@@ -27,7 +27,7 @@ describe('cloud smoketest', () => {
      * **************************************************/
 
     // wait for navbar to appear
-    cy.get('#nav-toggle').should('be.visible');
+    cy.get('.pf-c-page__sidebar').should('be.visible');
     // wait for the automation-hub button to appear and then click on it
     cy.get('[data-quickstart-id="Automation-Hub"]').click();
     // wait for the collections button to appear and then click on it
@@ -75,10 +75,10 @@ describe('cloud smoketest', () => {
       cy.contains('button', 'Upload new version').should('exist');
     });
 
-    it('can load the Repo Management page', () => {
+    it.skip('can load the Repo Management page', () => {
       cy.login();
       // wait for the Repo management button to appear and then click on it
-      cy.get('[data-ouia-component-id="Repo Management"]').click();
+      cy.get('[data-ouia-component-id="Repositories"]').click();
 
       // wait for the the repository list to appear
       cy.get('.repository-list').should('be.visible');

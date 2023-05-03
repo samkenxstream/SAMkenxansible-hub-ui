@@ -1,63 +1,66 @@
 describe('Hub Menu Tests', () => {
-  let adminUsername = Cypress.env('username');
-  let adminPassword = Cypress.env('password');
-  let username = 'nopermission';
-  let password = 'n0permissi0n';
+  const username = 'nopermission';
+  const password = 'n0permissi0n';
 
-  let menuItems = [
+  const menuItems = [
     'Collections > Collections',
     'Collections > Namespaces',
-    'Collections > Repository Management',
-    'Collections > API token management',
+    'Collections > Repositories',
+    'Collections > Remotes',
+    'Collections > API token',
     'Collections > Approval',
     'Execution Environments > Execution Environments',
     'Execution Environments > Remote Registries',
     'Task Management',
+    'Signature Keys',
     'Documentation',
     'User Access > Users',
     'User Access > Groups',
+    'User Access > Roles',
   ];
 
   before(() => {
     cy.deleteTestUsers();
-    cy.cookieReset();
 
     cy.galaxykit('user create', username, password);
   });
 
   it('admin user sees complete menu', () => {
-    cy.cookieLogin(adminUsername, adminPassword);
+    cy.login();
 
     menuItems.forEach((item) => cy.menuPresent(item));
   });
 
   describe('user without permissions', () => {
     // one more similar test in view-only
-    let visibleMenuItems = [
+    const visibleMenuItems = [
+      'Collections > API token',
       'Collections > Collections',
       'Collections > Namespaces',
-      'Collections > Repository Management',
-      'Collections > API token management',
+      'Collections > Repositories',
+      'Documentation',
       'Execution Environments > Execution Environments',
       'Execution Environments > Remote Registries',
+      'Signature Keys',
       'Task Management',
-      'Documentation',
     ];
-    let missingMenuItems = [
-      'User Access > Users',
-      'User Access > Groups',
+    const missingMenuItems = [
       'Collections > Approval',
+      'Collections > Remotes',
+      'User Access > Groups',
+      'User Access > Roles',
+      'User Access > Users',
     ];
 
     it('sees limited menu', () => {
-      cy.cookieLogin(username, password);
+      cy.login(username, password);
 
       visibleMenuItems.forEach((item) => cy.menuPresent(item));
       missingMenuItems.forEach((item) => cy.menuMissing(item));
     });
 
     it('has Documentation tab', () => {
-      cy.cookieLogin(username, password);
+      cy.login(username, password);
 
       cy.menuPresent('Documentation').should(
         'have.attr',

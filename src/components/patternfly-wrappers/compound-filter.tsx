@@ -12,14 +12,14 @@ import {
 } from '@patternfly/react-core';
 import { FilterIcon, SearchIcon } from '@patternfly/react-icons';
 import * as React from 'react';
-import { StatefulDropdown } from 'src/components';
+import { APISearchTypeAhead, StatefulDropdown } from 'src/components';
 import { ParamHelper } from 'src/utilities';
 
-class FilterOption {
+export class FilterOption {
   id: string;
   title: string;
   placeholder?: string;
-  inputType?: 'text-field' | 'select' | 'multiple';
+  inputType?: 'text-field' | 'select' | 'multiple' | 'typeahead';
   options?: { id: string; title: string }[];
 }
 
@@ -28,7 +28,7 @@ interface IProps {
   filterConfig: FilterOption[];
 
   /** Current page params */
-  // Type help: this shoud be something like: Record<string, strgin | SelectOptionObject | (string | SelectOptionObject)[]>
+  // Type help: this shoud be something like: Record<string, string | SelectOptionObject | (string | SelectOptionObject)[]>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   params: any;
 
@@ -38,6 +38,8 @@ interface IProps {
   inputText: string;
 
   onChange: (inputText: string) => void;
+
+  selectFilter?: (filterId: string) => void;
 }
 
 interface IState {
@@ -62,14 +64,19 @@ export class CompoundFilter extends React.Component<IProps, IState> {
   }
 
   render() {
-    const { filterConfig } = this.props;
+    const { filterConfig, selectFilter } = this.props;
     const { selectedFilter } = this.state;
+
+    if (filterConfig.length === 0) {
+      return null;
+    }
 
     const filterOptions = filterConfig.map((v) => (
       <DropdownItem
         onClick={() => {
           this.props.onChange('');
           this.setState({ selectedFilter: v });
+          selectFilter && selectFilter(v.id);
         }}
         key={v.id}
       >
@@ -79,7 +86,7 @@ export class CompoundFilter extends React.Component<IProps, IState> {
 
     return (
       <InputGroup data-cy='compound_filter'>
-        {filterConfig.length != 1 && (
+        {filterConfig.length !== 1 && (
           <StatefulDropdown
             toggleType='dropdown'
             defaultText={
@@ -158,6 +165,30 @@ export class CompoundFilter extends React.Component<IProps, IState> {
             ))}
           />
         );
+      case 'typeahead': {
+        const typeAheadResults = this.props.filterConfig
+          .find(({ id }) => id === selectedFilter.id)
+          .options.map(({ id, title }) => ({ id, name: title }));
+        return (
+          <APISearchTypeAhead
+            multiple={false}
+            loadResults={(name) => {
+              this.props.onChange(name);
+            }}
+            onClear={() => {
+              this.props.onChange('');
+            }}
+            onSelect={(event, value) => {
+              this.submitFilter(value);
+            }}
+            placeholderText={
+              selectedFilter?.placeholder ||
+              t`Filter by ${selectedFilter.title.toLowerCase()}`
+            }
+            results={typeAheadResults}
+          />
+        );
+      }
       default:
         return (
           <TextInput
@@ -211,8 +242,16 @@ export class CompoundFilter extends React.Component<IProps, IState> {
 
   private onSelectMultiple = (event) => {
     let newParams = this.props.params[this.state.selectedFilter.id];
+
+    // no tags => falsy
+    // 1 tag => "foo"
+    // 2+ tags => ["foo", "bar"]
+    // convert all to an array
     if (!newParams) {
       newParams = [];
+    }
+    if (!Array.isArray(newParams)) {
+      newParams = [newParams];
     }
 
     // TODO: Remove this replace after patternfly fixes the pf-random-id issue
@@ -225,6 +264,7 @@ export class CompoundFilter extends React.Component<IProps, IState> {
     } else {
       newParams.push(selectedID);
     }
+
     this.submitMultiple(newParams);
   };
 

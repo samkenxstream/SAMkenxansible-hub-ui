@@ -32,7 +32,7 @@ import { StandaloneMenu } from './menu';
 interface IProps {
   children: React.ReactNode;
   featureFlags: FeatureFlagsType;
-  selectedRepo: string;
+  hasPermission: (string) => boolean;
   setUser: (user) => void;
   settings: SettingsType;
   user: UserType;
@@ -41,7 +41,7 @@ interface IProps {
 export const StandaloneLayout = ({
   children,
   featureFlags,
-  selectedRepo,
+  hasPermission,
   setUser,
   settings,
   user,
@@ -127,13 +127,7 @@ export const StandaloneLayout = ({
     <PageHeader
       logo={<SmallLogo alt={APPLICATION_NAME}></SmallLogo>}
       logoComponent={({ children }) => (
-        <Link
-          to={formatPath(Paths.searchByRepo, {
-            repo: selectedRepo,
-          })}
-        >
-          {children}
-        </Link>
+        <Link to={formatPath(Paths.collections)}>{children}</Link>
       )}
       headerTools={
         <PageHeaderTools>
@@ -166,8 +160,7 @@ export const StandaloneLayout = ({
       theme='dark'
       nav={
         <StandaloneMenu
-          repository={selectedRepo}
-          context={{ user, settings, featureFlags }}
+          context={{ user, settings, featureFlags, hasPermission }}
         />
       }
     />

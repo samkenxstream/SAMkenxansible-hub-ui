@@ -1,7 +1,7 @@
 import { Trans, t } from '@lingui/macro';
 import { Button, DropdownItem } from '@patternfly/react-core';
 import * as React from 'react';
-import { Link, Navigate } from 'react-router-dom';
+import { Navigate } from 'react-router-dom';
 import {
   ContainerRepositoryType,
   ExecutionEnvironmentAPI,
@@ -21,12 +21,12 @@ import {
 } from 'src/components';
 import { AppContext } from 'src/loaders/app-context';
 import { Paths, formatEEPath, formatPath } from 'src/paths';
-import { RouteProps } from 'src/utilities';
 import {
   ParamHelper,
   RepoSigningUtils,
+  RouteProps,
   canSignEE,
-  parsePulpIDFromURL,
+  taskAlert,
   waitForTask,
 } from 'src/utilities';
 
@@ -112,7 +112,7 @@ export function withContainerRepo(WrappedComponent) {
         images: formatEEPath(Paths.executionEnvironmentDetailImages, {
           container,
         }),
-        owners: formatEEPath(Paths.executionEnvironmentDetailOwners, {
+        access: formatEEPath(Paths.executionEnvironmentDetailAccess, {
           container,
         }),
         notFound: formatPath(Paths.notFound),
@@ -322,11 +322,11 @@ export function withContainerRepo(WrappedComponent) {
     }
 
     private getTab() {
-      const tabs = ['detail', 'images', 'activity', 'owners'];
+      const tabs = ['detail', 'images', 'activity', 'access'];
       const location = this.props.location.pathname.split('/');
       const index = location.findIndex((s) => s === '_content');
 
-      // match /containers/owners/_content/owners but not /containers/owners
+      // match /containers/access/_content/access but not /containers/access
       // also handles /containers/:name/_content/images/:digest
       if (index !== -1) {
         const loc = location[index + 1];
@@ -360,20 +360,12 @@ export function withContainerRepo(WrappedComponent) {
 
     private sync(name) {
       ExecutionEnvironmentRemoteAPI.sync(name)
-        .then((result) => {
-          const task_id = parsePulpIDFromURL(result.data.task);
-          this.addAlert(
-            <Trans>Sync started for remote registry &quot;{name}&quot;.</Trans>,
-            'info',
-            <span>
-              <Trans>
-                See the task management{' '}
-                <Link to={formatPath(Paths.taskDetail, { task: task_id })}>
-                  detail page{' '}
-                </Link>
-                for the status of this task.
-              </Trans>
-            </span>,
+        .then(({ data }) => {
+          this.addAlertObj(
+            taskAlert(
+              data.task,
+              t`Sync started for remote registry "${name}".`,
+            ),
           );
           this.loadRepo();
         })

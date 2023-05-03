@@ -2,14 +2,12 @@ import { t } from '@lingui/macro';
 import * as React from 'react';
 import {
   CollectionAPI,
-  CollectionDetailType,
   CollectionUsedByDependencies,
   CollectionVersion,
   CollectionVersionAPI,
 } from 'src/api';
 import {
   AlertList,
-  AlertType,
   CollectionDependenciesList,
   CollectionHeader,
   CollectionUsedbyDependenciesList,
@@ -22,11 +20,10 @@ import { AppContext } from 'src/loaders/app-context';
 import { Paths, formatPath, namespaceBreadcrumb } from 'src/paths';
 import { RouteProps, withRouter } from 'src/utilities';
 import { ParamHelper, errorMessage, filterIsSet } from 'src/utilities';
-import { loadCollection } from './base';
+import { IBaseCollectionState, loadCollection } from './base';
 import './collection-dependencies.scss';
 
-interface IState {
-  collection: CollectionDetailType;
+interface IState extends IBaseCollectionState {
   dependencies_repos: CollectionVersion[];
   params: {
     page?: number;
@@ -38,7 +35,6 @@ interface IState {
   usedByDependencies: CollectionUsedByDependencies[];
   usedByDependenciesCount: number;
   usedByDependenciesLoading: boolean;
-  alerts: AlertType[];
 }
 
 class CollectionDependencies extends React.Component<RouteProps, IState> {
@@ -56,7 +52,10 @@ class CollectionDependencies extends React.Component<RouteProps, IState> {
     params['sort'] = !params['sort'] ? '-collection' : 'collection';
 
     this.state = {
-      collection: undefined,
+      collections: [],
+      collectionsCount: 0,
+      collection: null,
+      content: null,
       dependencies_repos: [],
       params: params,
       usedByDependencies: [],
@@ -72,7 +71,10 @@ class CollectionDependencies extends React.Component<RouteProps, IState> {
 
   render() {
     const {
+      collections,
+      collectionsCount,
       collection,
+      content,
       params,
       usedByDependencies,
       usedByDependenciesCount,
@@ -80,26 +82,27 @@ class CollectionDependencies extends React.Component<RouteProps, IState> {
       alerts,
     } = this.state;
 
-    if (!collection) {
+    if (collections.length <= 0) {
       return <LoadingPageWithHeader></LoadingPageWithHeader>;
     }
+
+    const { collection_version: version, repository } = collection;
 
     const breadcrumbs = [
       namespaceBreadcrumb,
       {
-        url: formatPath(Paths.namespaceByRepo, {
-          namespace: collection.namespace.name,
-          repo: this.context.selectedRepo,
+        url: formatPath(Paths.namespaceDetail, {
+          namespace: version.namespace,
         }),
-        name: collection.namespace.name,
+        name: version.namespace,
       },
       {
         url: formatPath(Paths.collectionByRepo, {
-          namespace: collection.namespace.name,
-          collection: collection.name,
-          repo: this.context.selectedRepo,
+          namespace: version.namespace,
+          collection: version.name,
+          repo: repository.name,
         }),
-        name: collection.name,
+        name: version.name,
       },
       { name: t`Dependencies` },
     ];
@@ -108,16 +111,17 @@ class CollectionDependencies extends React.Component<RouteProps, IState> {
 
     const dependenciesParams = ParamHelper.getReduced(params, ['version']);
 
-    const noDependencies = !Object.keys(
-      collection.latest_version.metadata.dependencies,
-    ).length;
+    const noDependencies = !Object.keys(version.dependencies).length;
 
     return (
       <React.Fragment>
         <AlertList alerts={alerts} closeAlert={(i) => this.closeAlert(i)} />
         <CollectionHeader
           reload={() => this.loadData(true)}
+          collections={collections}
+          collectionsCount={collectionsCount}
           collection={collection}
+          content={content}
           params={headerParams}
           updateParams={(p) => {
             this.updateParams(this.combineParams(this.state.params, p), () =>
@@ -126,7 +130,7 @@ class CollectionDependencies extends React.Component<RouteProps, IState> {
           }}
           breadcrumbs={breadcrumbs}
           activeTab='dependencies'
-          repo={this.context.selectedRepo}
+          repo={repository.name}
         />
         <Main>
           <section className='body'>
@@ -155,7 +159,6 @@ class CollectionDependencies extends React.Component<RouteProps, IState> {
                   )}
                   <p>{t`This collection is being used by`}</p>
                   <CollectionUsedbyDependenciesList
-                    repo={this.context.selectedRepo}
                     usedByDependencies={usedByDependencies}
                     itemCount={usedByDependenciesCount}
                     params={dependenciesParams}
@@ -185,8 +188,7 @@ class CollectionDependencies extends React.Component<RouteProps, IState> {
   }
 
   private loadCollectionsDependenciesRepos(callback) {
-    const dependencies =
-      this.state.collection.latest_version.metadata.dependencies;
+    const dependencies = this.state.collection.collection_version.dependencies;
     const dependencies_repos = [];
     const promises = [];
 
@@ -220,7 +222,9 @@ class CollectionDependencies extends React.Component<RouteProps, IState> {
       page_size: 1,
     })
       .then((result) => {
-        dependency_repo.repo = result.data.data[0].repository_list[0];
+        const [collection] = result.data.data;
+
+        dependency_repo.repo = collection.repository.name;
         dependency_repo.path = formatPath(Paths.collectionByRepo, {
           collection: dependency_repo.name,
           namespace: dependency_repo.namespace,
@@ -242,9 +246,13 @@ class CollectionDependencies extends React.Component<RouteProps, IState> {
 
       this.cancelToken = CollectionAPI.getCancelToken();
 
+      const { name, namespace } = this.state.collection.collection_version;
+
+      // We have to use CollectionAPI here for used by dependencies
+      // because cross repo collection search doesn't allow `name__icontains` filter
       CollectionAPI.getUsedDependenciesByCollection(
-        this.state.collection.namespace.name,
-        this.state.collection.name,
+        namespace,
+        name,
         ParamHelper.getReduced(this.state.params, ['version']),
         this.cancelToken,
       )
@@ -255,9 +263,10 @@ class CollectionDependencies extends React.Component<RouteProps, IState> {
             usedByDependenciesLoading: false,
           });
         })
-        .catch((err) => {
-          const { status, statusText } = err.response;
-          if (err?.message !== 'request-canceled') {
+        .catch(({ response, message }) => {
+          // console.log(response, message);
+          if (message !== 'request-canceled') {
+            const { status, statusText } = response;
             this.setState({
               usedByDependenciesLoading: false,
               alerts: [
@@ -282,8 +291,11 @@ class CollectionDependencies extends React.Component<RouteProps, IState> {
       forceReload,
       matchParams: this.props.routeParams,
       navigate: this.props.navigate,
-      selectedRepo: this.context.selectedRepo,
-      setCollection: (collection) => this.setState({ collection }, callback),
+      setCollection: (collections, collection, content, collectionsCount) =>
+        this.setState(
+          { collections, collection, content, collectionsCount },
+          callback,
+        ),
       stateParams: this.state.params.version
         ? { version: this.state.params.version }
         : {},

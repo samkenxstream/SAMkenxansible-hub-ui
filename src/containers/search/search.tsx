@@ -1,10 +1,12 @@
 import { t } from '@lingui/macro';
 import { Button, DataList, DropdownItem, Switch } from '@patternfly/react-core';
+import cx from 'classnames';
 import * as React from 'react';
 import { Navigate } from 'react-router-dom';
 import {
   CollectionAPI,
-  CollectionListType,
+  CollectionVersionAPI,
+  CollectionVersionSearch,
   MyNamespaceAPI,
   MySyncListAPI,
   SyncListType,
@@ -23,7 +25,6 @@ import {
   ImportModal,
   LoadingPageSpinner,
   Pagination,
-  RepoSelector,
   StatefulDropdown,
   closeAlertMixin,
 } from 'src/components';
@@ -43,7 +44,7 @@ import { ParamHelper } from 'src/utilities/param-helper';
 import './search.scss';
 
 interface IState {
-  collections: CollectionListType[];
+  collections: CollectionVersionSearch[];
   numberOfResults: number;
   params: {
     page?: number;
@@ -51,15 +52,17 @@ interface IState {
     keywords?: string;
     tags?: string[];
     view_type?: string;
+    repository_name?: string;
+    namespace?: string;
   };
   loading: boolean;
   synclist: SyncListType;
   alerts: AlertType[];
-  updateCollection: CollectionListType;
+  updateCollection: CollectionVersionSearch;
   showImportModal: boolean;
   redirect: string;
   noDependencies: boolean;
-  deleteCollection: CollectionListType;
+  deleteCollection: CollectionVersionSearch;
   confirmDelete: boolean;
   isDeletionPending: boolean;
 }
@@ -144,7 +147,13 @@ class Search extends React.Component<RouteProps, IState> {
     } = this.state;
     const noData =
       collections.length === 0 &&
-      !filterIsSet(params, ['keywords', 'tags', 'sign_state']);
+      !filterIsSet(params, [
+        'keywords',
+        'tags',
+        'is_signed',
+        'repository_name',
+        'namespace',
+      ]);
 
     const updateParams = (p) =>
       this.updateParams(p, () => this.queryCollections());
@@ -157,6 +166,7 @@ class Search extends React.Component<RouteProps, IState> {
         />
         <DeleteCollectionModal
           deleteCollection={deleteCollection}
+          collections={collections}
           isDeletionPending={isDeletionPending}
           confirmDelete={confirmDelete}
           setConfirmDelete={(confirmDelete) => this.setState({ confirmDelete })}
@@ -168,7 +178,6 @@ class Search extends React.Component<RouteProps, IState> {
                 setState: (state) => this.setState(state),
                 load: () => this.load(),
                 redirect: false,
-                selectedRepo: this.context.selectedRepo,
                 addAlert: (alert) => this.addAlert(alert),
               }),
             )
@@ -184,27 +193,18 @@ class Search extends React.Component<RouteProps, IState> {
                   Paths.myImports,
                   {},
                   {
-                    namespace: updateCollection.namespace.name,
+                    namespace: updateCollection.collection_version.namespace,
                   },
                 ),
               })
             }
             // onCancel
             setOpen={(isOpen, warn) => this.toggleImportModal(isOpen, warn)}
-            collection={updateCollection}
-            namespace={updateCollection.namespace.name}
+            collection={updateCollection.collection_version}
+            namespace={updateCollection.collection_version.namespace}
           />
         )}
-        <BaseHeader
-          className='header'
-          title={t`Collections`}
-          contextSelector={
-            <RepoSelector
-              path={Paths.searchByRepo}
-              selectedRepo={this.context.selectedRepo}
-            />
-          }
-        >
+        <BaseHeader className='header' title={t`Collections`}>
           {!noData && (
             <div className='hub-toolbar-wrapper'>
               <div className='toolbar'>
@@ -308,14 +308,16 @@ class Search extends React.Component<RouteProps, IState> {
   private renderCards(collections) {
     return (
       <div className='hub-cards'>
-        {collections.map((c) => {
+        {collections.map((c, i) => {
           return (
             <CollectionCard
               className='card'
-              key={c.id}
+              key={i}
               {...c}
-              footer={this.renderSyncToogle(c.name, c.namespace.name)}
-              repo={this.context.selectedRepo}
+              footer={this.renderSyncToogle(
+                c.collection_version.name,
+                c.collection_version.namespace,
+              )}
               menu={this.renderMenu(false, c)}
               displaySignatures={this.context.featureFlags.display_signatures}
             />
@@ -326,17 +328,14 @@ class Search extends React.Component<RouteProps, IState> {
   }
 
   private handleControlClick(collection) {
-    CollectionAPI.setDeprecation(
-      collection,
-      !collection.deprecated,
-      this.context.selectedRepo,
-    )
+    const { name } = collection.collection_version;
+    CollectionAPI.setDeprecation(collection)
       .then((res) => {
         const taskId = parsePulpIDFromURL(res.data.task);
         return waitForTask(taskId).then(() => {
           const title = !collection.deprecated
-            ? t`The collection "${collection.name}" has been successfully deprecated.`
-            : t`The collection "${collection.name}" has been successfully undeprecated.`;
+            ? t`The collection "${name}" has been successfully deprecated.`
+            : t`The collection "${name}" has been successfully undeprecated.`;
           this.setState({
             alerts: [
               ...this.state.alerts,
@@ -357,8 +356,8 @@ class Search extends React.Component<RouteProps, IState> {
             {
               variant: 'danger',
               title: !collection.deprecated
-                ? t`Collection "${collection.name}" could not be deprecated.`
-                : t`Collection "${collection.name}" could not be undeprecated.`,
+                ? t`Collection "${name}" could not be deprecated.`
+                : t`Collection "${name}" could not be undeprecated.`,
               description: errorMessage(status, statusText),
             },
           ],
@@ -379,40 +378,48 @@ class Search extends React.Component<RouteProps, IState> {
             collection,
           }),
       }),
-      <DropdownItem
-        onClick={() => this.handleControlClick(collection)}
-        key='deprecate'
-      >
-        {collection.deprecated ? t`Undeprecate` : t`Deprecate`}
-      </DropdownItem>,
-    ];
-
-    if (!list) {
-      menuItems.push(
+      hasPermission('galaxy.upload_to_namespace') && (
+        <DropdownItem
+          onClick={() => this.handleControlClick(collection)}
+          key='deprecate'
+        >
+          {collection.is_deprecated ? t`Undeprecate` : t`Deprecate`}
+        </DropdownItem>
+      ),
+      !list && hasPermission('galaxy.upload_to_namespace') && (
         <DropdownItem
           onClick={() => this.checkUploadPrivilleges(collection)}
           key='upload new version'
         >
           {t`Upload new version`}
-        </DropdownItem>,
-      );
-    }
+        </DropdownItem>
+      ),
+    ].filter(Boolean);
 
-    return (
-      <React.Fragment>
-        {list && (
+    const displayMenu = menuItems.length > 0;
+
+    if (list) {
+      return {
+        uploadButton: hasPermission('galaxy.upload_to_namespace') ? (
           <Button
             onClick={() => this.checkUploadPrivilleges(collection)}
             variant='secondary'
           >
             {t`Upload new version`}
           </Button>
+        ) : null,
+        dropdownMenu: displayMenu ? (
+          <StatefulDropdown items={menuItems} ariaLabel='collection-kebab' />
+        ) : null,
+      };
+    }
+
+    return (
+      <span className={cx(!displayMenu && 'hidden-menu-space')}>
+        {displayMenu && (
+          <StatefulDropdown items={menuItems} ariaLabel='collection-kebab' />
         )}
-        <StatefulDropdown
-          items={menuItems.filter(Boolean)}
-          ariaLabel='collection-kebab'
-        />
-      </React.Fragment>
+      </span>
     );
   }
 
@@ -447,7 +454,7 @@ class Search extends React.Component<RouteProps, IState> {
       });
     };
 
-    MyNamespaceAPI.get(collection.namespace.name, {
+    MyNamespaceAPI.get(collection.collection_version.namespace, {
       include_related: 'my_permissions',
     })
       .then((value) => {
@@ -494,11 +501,7 @@ class Search extends React.Component<RouteProps, IState> {
       (el) => el.name === name && el.namespace === namespace,
     );
 
-    if (synclist.policy === 'include') {
-      return !(found === undefined);
-    } else {
-      return found === undefined;
-    }
+    return synclist.policy === 'include' ? !!found : !found;
   }
 
   private renderList(collections) {
@@ -506,19 +509,17 @@ class Search extends React.Component<RouteProps, IState> {
       <div className='list-container'>
         <div className='hub-list'>
           <DataList className='data-list' aria-label={t`List of Collections`}>
-            {collections.map((c) => (
+            {collections.map((c, i) => (
               <CollectionListItem
-                showNamespace={true}
-                key={c.id}
-                {...c}
-                controls={
-                  <>
-                    {this.renderSyncToogle(c.name, c.namespace.name)}
-                    {this.renderMenu(true, c)}
-                  </>
-                }
-                repo={this.context.selectedRepo}
+                key={i}
+                collection={c}
                 displaySignatures={this.context.featureFlags.display_signatures}
+                showNamespace
+                synclistSwitch={this.renderSyncToogle(
+                  c.collection_version.name,
+                  c.collection_version.namespace,
+                )}
+                {...this.renderMenu(true, c)}
               />
             ))}
           </DataList>
@@ -543,13 +544,12 @@ class Search extends React.Component<RouteProps, IState> {
 
   private queryCollections() {
     this.setState({ loading: true }, () => {
-      CollectionAPI.list(
-        {
-          ...ParamHelper.getReduced(this.state.params, ['view_type']),
-          deprecated: false,
-        },
-        this.context.selectedRepo,
-      ).then((result) => {
+      CollectionVersionAPI.list({
+        ...ParamHelper.getReduced(this.state.params, ['view_type']),
+        is_deprecated: false,
+        repository_label: '!hide_from_search',
+        is_highest: true,
+      }).then((result) => {
         this.setState({
           collections: result.data.data,
           numberOfResults: result.data.meta.count,

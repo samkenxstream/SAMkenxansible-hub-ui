@@ -5,6 +5,8 @@ const {
   defaultServices,
 } = require('@redhat-cloud-services/frontend-components-config-utilities/standalone');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
+const HtmlWebpackPlugin = require('html-webpack-plugin');
+const MonacoWebpackPlugin = require('monaco-editor-webpack-plugin');
 const { execSync } = require('child_process'); // node:child_process
 
 const isBuild = process.env.NODE_ENV === 'production';
@@ -12,7 +14,7 @@ const cloudBeta = process.env.HUB_CLOUD_BETA; // "true" | "false" | undefined (=
 
 // NOTE: This file is not meant to be consumed directly by weback. Instead it
 // should be imported, initialized with the following settings and exported like
-// a normal webpack config. See config/insights.prod.webpack.config.js for an
+// a normal webpack config. See config/standalone.dev.webpack.config.js for an
 // example
 
 // only run git when HUB_UI_VERSION is NOT provided
@@ -37,13 +39,45 @@ const defaultConfigs = [
   // build time
   { name: 'UI_USE_HTTPS', default: false, scope: 'webpack' },
   { name: 'UI_DEBUG', default: false, scope: 'webpack' },
-  { name: 'TARGET_ENVIRONMENT', default: 'prod', scope: 'webpack' },
   { name: 'UI_PORT', default: 8002, scope: 'webpack' },
   { name: 'WEBPACK_PROXY', default: undefined, scope: 'webpack' },
   { name: 'WEBPACK_PUBLIC_PATH', default: undefined, scope: 'webpack' },
-  { name: 'USE_FAVICON', default: true, scope: 'webpack' },
   { name: 'API_PROXY_TARGET', default: undefined, scope: 'webpack' },
 ];
+
+const insightsMockAPIs = ({ app }) => {
+  // GET
+  [
+    {
+      url: '/api/chrome-service/v1/user',
+      response: {
+        data: {
+          lastVisited: [],
+          favoritePages: [],
+          visitedBundles: {},
+        },
+      },
+    },
+    { url: '/api/featureflags/v0', response: { toggles: [] } },
+    { url: '/api/quickstarts/v1/progress', response: { data: [] } },
+    { url: '/api/rbac/v1/access', response: { data: [] } },
+    { url: '/api/rbac/v1/cross-account-requests', response: { data: [] } },
+  ].forEach(({ url, response }) =>
+    app.get(url, (_req, res) => res.send(response)),
+  );
+
+  // POST
+  [
+    { url: '/api/chrome-service/v1/last-visited', response: { data: [] } },
+    {
+      url: '/api/chrome-service/v1/user/visited-bundles',
+      response: { data: [] },
+    },
+    { url: '/api/featureflags/v0/client/metrics', response: {} },
+  ].forEach(({ url, response }) =>
+    app.post(url, (_req, res) => res.send(response)),
+  );
+};
 
 module.exports = (inputConfigs) => {
   const customConfigs = {};
@@ -70,37 +104,17 @@ module.exports = (inputConfigs) => {
 
   const isStandalone = customConfigs.DEPLOYMENT_MODE !== 'insights';
 
-  // config for HtmlWebpackPlugin
-  const htmlPluginConfig = {
-    // used by src/index.html
-    applicationName: customConfigs.APPLICATION_NAME,
-    targetEnv: customConfigs.DEPLOYMENT_MODE,
-
-    // standalone needs injecting js and css into dist/index.html
-    inject: isStandalone,
-  };
-
-  // being able to turn off the favicon is useful for deploying to insights mode
-  // console.redhat.com sets its own favicon and ours tends to override it if we
-  // set one
-  if (customConfigs.USE_FAVICON) {
-    htmlPluginConfig['favicon'] = 'static/images/favicon.ico';
-  }
-
   const { config: webpackConfig, plugins } = config({
     rootFolder: resolve(__dirname, '../'),
     definePlugin: globals,
-    htmlPlugin: htmlPluginConfig,
     debug: customConfigs.UI_DEBUG,
     https: customConfigs.UI_USE_HTTPS,
+
     // defines port for dev server
     port: customConfigs.UI_PORT,
 
     // frontend-components-config 4.5.0+: don't remove patternfly from non-insights builds
     bundlePfModules: isStandalone,
-
-    // frontend-components-config 4.6.9+: keep HtmlWebpackPlugin for standalone
-    useChromeTemplate: !isStandalone,
 
     // frontend-components-config 4.6.25-29+: ensure hashed filenames
     useFileHash: true,
@@ -108,7 +122,12 @@ module.exports = (inputConfigs) => {
     // insights dev
     ...(!isStandalone &&
       !isBuild && {
-        appUrl: customConfigs.UI_BASE_PATH,
+        appUrl: customConfigs.UI_BASE_PATH.includes('/preview/')
+          ? [
+              customConfigs.UI_BASE_PATH,
+              customConfigs.UI_BASE_PATH.replace('/preview/', '/beta/'),
+            ]
+          : customConfigs.UI_BASE_PATH,
         deployment: cloudBeta !== 'false' ? 'beta/apps' : 'apps',
         standalone: {
           api: {
@@ -118,24 +137,7 @@ module.exports = (inputConfigs) => {
           rbac,
           ...defaultServices,
         },
-        registry: [
-          ({ app }) => {
-            app.get('/api/featureflags/v0', (_req, res) =>
-              res.send({ toggles: [] }),
-            );
-            app.get('/api/quickstarts/v1/progress', (_req, res) =>
-              res.send({ data: [] }),
-            );
-            app.get('/api/rbac/v1/cross-account-requests', (_req, res) =>
-              res.send({ data: [] }),
-            );
-            app.get('/api/rbac/v1/access', (_req, res) => res.send(null));
-
-            app.post('/api/featureflags/v0/client/metrics', (_req, res) =>
-              res.send(null),
-            );
-          },
-        ],
+        registry: [insightsMockAPIs],
       }),
 
     // insights deployments from master
@@ -216,6 +218,17 @@ module.exports = (inputConfigs) => {
 
   // ForkTsCheckerWebpackPlugin is part of default config since @redhat-cloud-services/frontend-components-config 4.6.24
 
+  // keep HtmlWebpackPlugin for standalone, inject src/index.html
+  if (isStandalone) {
+    plugins.push(
+      new HtmlWebpackPlugin({
+        applicationName: customConfigs.APPLICATION_NAME,
+        favicon: 'static/images/favicon.ico',
+        template: resolve(__dirname, '../src/index.html'),
+      }),
+    );
+  }
+
   if (customConfigs.DEPLOYMENT_MODE === 'insights') {
     /**
      * Generates remote containers for chrome 2
@@ -240,6 +253,13 @@ module.exports = (inputConfigs) => {
       ),
     );
   }
+
+  // @patternfly/react-code-editor
+  plugins.push(
+    new MonacoWebpackPlugin({
+      languages: ['yaml'],
+    }),
+  );
 
   return {
     ...newWebpackConfig,

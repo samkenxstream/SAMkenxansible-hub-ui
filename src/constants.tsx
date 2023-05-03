@@ -10,9 +10,6 @@ export class Constants {
   static readonly INSIGHTS_DEPLOYMENT_MODE = 'insights';
   static readonly STANDALONE_DEPLOYMENT_MODE = 'standalone';
 
-  static readonly ADMIN_GROUP = 'system:partner-engineers';
-  static PUBLISHED = 'published';
-
   static CERTIFIED_REPO =
     DEPLOYMENT_MODE === Constants.INSIGHTS_DEPLOYMENT_MODE
       ? 'published'
@@ -20,6 +17,8 @@ export class Constants {
 
   static NOTCERTIFIED = 'rejected';
   static NEEDSREVIEW = 'staging';
+
+  static APPROVED = 'approved';
 
   static USER_GROUP_MGMT_PERMISSIONS = [
     'galaxy.delete_user',
@@ -29,27 +28,14 @@ export class Constants {
     'galaxy.add_group',
   ];
 
-  static UPSTREAM_HOSTS = [
-    'galaxy.ansible.com',
-    'galaxy-dev.ansible.com',
-    'galaxy-qa.ansible.com',
+  static PROTECTED_REPOSITORIES = [
+    'rh-certified',
+    'validated',
+    'community',
+    'published',
+    'staging',
+    'rejected',
   ];
-
-  static DOWNSTREAM_HOSTS = [
-    'console.redhat.com',
-    'console.stage.redhat.com',
-    'ci.console.redhat.com',
-    'qa.console.redhat.com',
-  ];
-
-  static REPOSITORYNAMES = {
-    published: defineMessage({ message: `Published` }),
-    'rh-certified': defineMessage({ message: `Red Hat Certified` }),
-    community: defineMessage({ message: `Community` }),
-    validated: defineMessage({ message: `Validated` }),
-  };
-
-  static ALLOWEDREPOS = ['community', 'published', 'rh-certified', 'validated'];
 
   static COLLECTION_FILTER_TAGS = [
     'application',
@@ -164,28 +150,23 @@ export class Constants {
     }),
   };
 
-  static HUMAN_STATUS = {
-    completed: t`Completed`,
-    failed: t`Failed`,
-    running: t`Running`,
-    waiting: t`Waiting`,
-  };
-
   static LOCKED_ROLES_WITH_DESCRIPTION = {
     // galaxy roles
-    'galaxy.content_admin': t`Manage all content types.`,
+    'galaxy.ansible_repository_owner': t`Manage ansible repositories.`,
     'galaxy.collection_admin': t`Create, delete and change collection namespaces. Upload and delete collections. Sync collections from remotes. Approve and reject collections.`,
-    'galaxy.collection_publisher': t`Upload and modify collections.`,
     'galaxy.collection_curator': t`Approve, reject and sync collections from remotes.`,
     'galaxy.collection_namespace_owner': t`Change and upload collections to namespaces.`,
+    'galaxy.collection_publisher': t`Upload and modify collections.`,
+    'galaxy.collection_remote_owner': t`Manage collection remotes.`,
+    'galaxy.content_admin': t`Manage all content types.`,
     'galaxy.execution_environment_admin': t`Push, delete, and change execution environments. Create, delete and change remote registries.`,
-    'galaxy.execution_environment_publisher': t`Push, and change execution environments.`,
-    'galaxy.execution_environment_namespace_owner': t`Create and update execution environments under existing container namespaces.`,
     'galaxy.execution_environment_collaborator': t`Change existing execution environments.`,
+    'galaxy.execution_environment_namespace_owner': t`Create and update execution environments under existing container namespaces.`,
+    'galaxy.execution_environment_publisher': t`Push, and change execution environments.`,
     'galaxy.group_admin': t`View, add, remove and change groups.`,
-    'galaxy.user_admin': t`View, add, remove and change users.`,
     'galaxy.synclist_owner': t`View, add, remove and change synclists.`,
     'galaxy.task_admin': t`View, and cancel any task.`,
+    'galaxy.user_admin': t`View, add, remove and change users.`,
 
     // core roles
     'core.task_owner': t`Allow all actions on a task.`,

@@ -1,5 +1,7 @@
 import { Trans, t } from '@lingui/macro';
+import { CodeEditor, Language } from '@patternfly/react-code-editor';
 import {
+  ActionGroup,
   Button,
   Checkbox,
   ExpandableSection,
@@ -16,23 +18,27 @@ import {
   ExclamationCircleIcon,
   ExclamationTriangleIcon,
 } from '@patternfly/react-icons';
-import * as FileSaver from 'file-saver';
-import * as React from 'react';
+import React from 'react';
 import { RemoteType, WriteOnlyFieldType } from 'src/api';
 import { FileUpload, HelperText, WriteOnlyField } from 'src/components';
-import { Constants } from 'src/constants';
 import { AppContext } from 'src/loaders/app-context';
-import { ErrorMessagesType, isFieldSet, isWriteOnly } from 'src/utilities';
-import { validateURLHelper } from 'src/utilities';
+import {
+  ErrorMessagesType,
+  downloadString,
+  isFieldSet,
+  isWriteOnly,
+  validateURLHelper,
+} from 'src/utilities';
 
 interface IProps {
   allowEditName?: boolean;
   closeModal: () => void;
   errorMessages: ErrorMessagesType;
   remote: RemoteType;
-  remoteType?: 'registry';
+  remoteType: 'registry' | 'ansible-remote';
   saveRemote: () => void;
-  showModal: boolean;
+  showModal?: boolean;
+  showMain?: boolean;
   title?: string;
   updateRemote: (remote) => void;
 }
@@ -91,68 +97,91 @@ export class RemoteForm extends React.Component<IProps, IState> {
   }
 
   render() {
-    const { remote } = this.props;
+    const {
+      allowEditName,
+      closeModal,
+      remote,
+      saveRemote,
+      showMain,
+      showModal,
+      remoteType,
+      title,
+    } = this.props;
+
     if (!remote) {
       return null;
     }
 
-    const remoteType = this.props.remoteType || this.getRemoteType(remote.url);
+    const requiredFields = ['name', 'url'];
+    let disabledFields = allowEditName ? [] : ['name'];
 
-    let requiredFields = ['name', 'url'];
-    let disabledFields = this.props.allowEditName ? [] : ['name'];
+    switch (remoteType) {
+      case 'ansible-remote':
+        // require only name, url; nothing disabled
+        break;
 
-    if (remoteType === 'certified') {
-      requiredFields = requiredFields.concat(['auth_url']);
-      disabledFields = disabledFields.concat(['requirements_file']);
+      case 'registry':
+        disabledFields = disabledFields.concat([
+          'auth_url',
+          'token',
+          'requirements_file',
+          'signed_only',
+        ]);
+        break;
     }
 
-    if (remoteType === 'community') {
-      requiredFields = requiredFields.concat(['requirements_file']);
-      disabledFields = disabledFields.concat(['auth_url', 'token']);
-    }
+    const save = (
+      <Button
+        isDisabled={!this.isValid(requiredFields)}
+        key='confirm'
+        variant='primary'
+        onClick={() => saveRemote()}
+      >
+        {t`Save`}
+      </Button>
+    );
+    const cancel = (
+      <Button key='cancel' variant='link' onClick={() => closeModal()}>
+        {t`Cancel`}
+      </Button>
+    );
 
-    if (remoteType === 'registry') {
-      disabledFields = disabledFields.concat([
-        'auth_url',
-        'token',
-        'requirements_file',
-        'signed_only',
-      ]);
+    if (showMain) {
+      return (
+        <>
+          {this.renderForm(
+            requiredFields,
+            disabledFields,
+            <ActionGroup key='actions'>
+              {save}
+              {cancel}
+            </ActionGroup>,
+          )}
+        </>
+      );
     }
 
     return (
       <Modal
-        isOpen={this.props.showModal}
-        title={this.props.title || t`Edit remote`}
+        isOpen={showModal}
+        title={title || t`Edit remote`}
         variant='small'
-        onClose={() => this.props.closeModal()}
-        actions={[
-          <Button
-            isDisabled={!this.isValid(requiredFields, remoteType)}
-            key='confirm'
-            variant='primary'
-            onClick={() => this.props.saveRemote()}
-          >
-            {t`Save`}
-          </Button>,
-          <Button
-            key='cancel'
-            variant='link'
-            onClick={() => this.props.closeModal()}
-          >
-            {t`Cancel`}
-          </Button>,
-        ]}
+        onClose={() => closeModal()}
+        actions={[save, cancel]}
       >
         {this.renderForm(requiredFields, disabledFields)}
       </Modal>
     );
   }
 
-  private renderForm(requiredFields, disabledFields) {
-    const { remote, errorMessages } = this.props;
+  private renderForm(requiredFields, disabledFields, extra?) {
+    const { errorMessages, remote, remoteType } = this.props;
     const { filenames } = this.state;
     const { collection_signing } = this.context.featureFlags;
+    const writeOnlyFields =
+      remote[
+        remoteType === 'ansible-remote' ? 'hidden_fields' : 'write_only_fields'
+      ];
 
     const docsAnsibleLink = (
       <a
@@ -163,6 +192,14 @@ export class RemoteForm extends React.Component<IProps, IState> {
         requirements.yml
       </a>
     );
+
+    const yamlTemplate = [
+      '# Sample requirements.yaml',
+      '',
+      'collections:',
+      '  - name: my_namespace.my_collection_name',
+      '  - name: my_namespace.my_collection_name2',
+    ].join('\n');
 
     const filename = (field) =>
       filenames[field].original ? t`(uploaded)` : filenames[field].name;
@@ -233,7 +270,7 @@ export class RemoteForm extends React.Component<IProps, IState> {
           >
             <Switch
               id='signed_only'
-              isChecked={remote.signed_only}
+              isChecked={!!remote.signed_only}
               onChange={(value) => this.updateRemote(value, 'signed_only')}
             />
           </FormGroup>
@@ -253,7 +290,7 @@ export class RemoteForm extends React.Component<IProps, IState> {
             helperTextInvalid={errorMessages['token']}
           >
             <WriteOnlyField
-              isValueSet={isFieldSet('token', remote.write_only_fields)}
+              isValueSet={isFieldSet('token', writeOnlyFields)}
               onClear={() => this.updateIsSet('token', false)}
             >
               <TextInput
@@ -325,14 +362,12 @@ export class RemoteForm extends React.Component<IProps, IState> {
               <FlexItem>
                 <Button
                   isDisabled={!this.props.remote.requirements_file}
-                  onClick={() => {
-                    FileSaver.saveAs(
-                      new Blob([this.props.remote.requirements_file], {
-                        type: 'text/plain;charset=utf-8',
-                      }),
+                  onClick={() =>
+                    downloadString(
+                      this.props.remote.requirements_file,
                       filenames.requirements_file.name,
-                    );
-                  }}
+                    )
+                  }
                   variant='plain'
                   aria-label={t`Download requirements file`}
                 >
@@ -340,6 +375,48 @@ export class RemoteForm extends React.Component<IProps, IState> {
                 </Button>
               </FlexItem>
             </Flex>
+            <ExpandableSection
+              toggleTextExpanded={t`Close YAML editor`}
+              toggleTextCollapsed={t`Edit in YAML editor`}
+            >
+              <Flex>
+                <FlexItem grow={{ default: 'grow' }}>
+                  <ExclamationTriangleIcon />{' '}
+                  {t`If you populate this requirements file, this remote will only sync collections from this file, otherwise all collections will be synchronized.`}
+                  <CodeEditor
+                    code={this.props.remote.requirements_file}
+                    isCopyEnabled
+                    isDarkTheme
+                    isDownloadEnabled
+                    isLanguageLabelVisible
+                    isUploadEnabled
+                    emptyState={
+                      <>
+                        <pre>{yamlTemplate}</pre>
+                        <Button
+                          variant='plain'
+                          onClick={() =>
+                            this.updateRemote(yamlTemplate, 'requirements_file')
+                          }
+                        >{t`Use template`}</Button>
+                        <Button
+                          variant='plain'
+                          onClick={() =>
+                            this.updateRemote('\n', 'requirements_file')
+                          }
+                        >{t`Start from scratch`}</Button>
+                      </>
+                    }
+                    height='20rem'
+                    language={Language.yaml}
+                    onChange={(value) =>
+                      this.updateRemote(value, 'requirements_file')
+                    }
+                    onEditorDidMount={(editor) => editor.focus()}
+                  />
+                </FlexItem>
+              </Flex>
+            </ExpandableSection>
           </FormGroup>
         )}
 
@@ -362,8 +439,8 @@ export class RemoteForm extends React.Component<IProps, IState> {
         >
           <WriteOnlyField
             isValueSet={
-              isWriteOnly('username', remote.write_only_fields) &&
-              isFieldSet('username', remote.write_only_fields)
+              isWriteOnly('username', writeOnlyFields) &&
+              isFieldSet('username', writeOnlyFields)
             }
             onClear={() => this.updateIsSet('username', false)}
           >
@@ -397,7 +474,7 @@ export class RemoteForm extends React.Component<IProps, IState> {
           helperTextInvalid={errorMessages['password']}
         >
           <WriteOnlyField
-            isValueSet={isFieldSet('password', remote.write_only_fields)}
+            isValueSet={isFieldSet('password', writeOnlyFields)}
             onClear={() => this.updateIsSet('password', false)}
           >
             <TextInput
@@ -445,8 +522,8 @@ export class RemoteForm extends React.Component<IProps, IState> {
             >
               <WriteOnlyField
                 isValueSet={
-                  isWriteOnly('proxy_username', remote.write_only_fields) &&
-                  isFieldSet('proxy_username', remote.write_only_fields)
+                  isWriteOnly('proxy_username', writeOnlyFields) &&
+                  isFieldSet('proxy_username', writeOnlyFields)
                 }
                 onClear={() => this.updateIsSet('proxy_username', false)}
               >
@@ -473,10 +550,7 @@ export class RemoteForm extends React.Component<IProps, IState> {
               helperTextInvalid={errorMessages['proxy_password']}
             >
               <WriteOnlyField
-                isValueSet={isFieldSet(
-                  'proxy_password',
-                  remote.write_only_fields,
-                )}
+                isValueSet={isFieldSet('proxy_password', writeOnlyFields)}
                 onClear={() => this.updateIsSet('proxy_password', false)}
               >
                 <TextInput
@@ -525,7 +599,7 @@ export class RemoteForm extends React.Component<IProps, IState> {
               helperTextInvalid={errorMessages['client_key']}
             >
               <WriteOnlyField
-                isValueSet={isFieldSet('client_key', remote.write_only_fields)}
+                isValueSet={isFieldSet('client_key', writeOnlyFields)}
                 onClear={() => this.updateIsSet('client_key', false)}
               >
                 <FileUpload
@@ -571,14 +645,12 @@ export class RemoteForm extends React.Component<IProps, IState> {
                   <Button
                     data-cy='client_cert'
                     isDisabled={!this.props.remote.client_cert}
-                    onClick={() => {
-                      FileSaver.saveAs(
-                        new Blob([this.props.remote.client_cert], {
-                          type: 'text/plain;charset=utf-8',
-                        }),
+                    onClick={() =>
+                      downloadString(
+                        this.props.remote.client_cert,
                         filenames.client_cert.name,
-                      );
-                    }}
+                      )
+                    }
                     variant='plain'
                     aria-label={t`Download client certification file`}
                   >
@@ -617,14 +689,12 @@ export class RemoteForm extends React.Component<IProps, IState> {
                   <Button
                     data-cy='ca_cert'
                     isDisabled={!this.props.remote.ca_cert}
-                    onClick={() => {
-                      FileSaver.saveAs(
-                        new Blob([this.props.remote.ca_cert], {
-                          type: 'text/plain;charset=utf-8',
-                        }),
+                    onClick={() =>
+                      downloadString(
+                        this.props.remote.ca_cert,
                         filenames.ca_cert.name,
-                      );
-                    }}
+                      )
+                    }
                     variant='plain'
                     aria-label={t`Download CA certification file`}
                   >
@@ -700,12 +770,13 @@ export class RemoteForm extends React.Component<IProps, IState> {
             {errorMessages['__nofield']}
           </span>
         ) : null}
+        {extra}
       </Form>
     );
   }
 
-  private isValid(requiredFields, remoteType) {
-    const { remote } = this.props;
+  private isValid(requiredFields) {
+    const { remote, remoteType } = this.props;
 
     for (const field of requiredFields) {
       if (!remote[field] || remote[field] === '') {
@@ -713,7 +784,7 @@ export class RemoteForm extends React.Component<IProps, IState> {
       }
     }
 
-    if (['community', 'certified', 'none'].includes(remoteType)) {
+    if (remoteType === 'ansible-remote') {
       // only required in remotes, not registries
       if (remote.download_concurrency < 1) {
         return false;
@@ -727,42 +798,26 @@ export class RemoteForm extends React.Component<IProps, IState> {
     return true;
   }
 
-  private getRemoteType(url: string): 'community' | 'certified' | 'none' {
-    for (const host of Constants.UPSTREAM_HOSTS) {
-      if (url.includes(host)) {
-        return 'community';
-      }
-    }
-
-    for (const host of Constants.DOWNSTREAM_HOSTS) {
-      if (url.includes(host)) {
-        return 'certified';
-      }
-    }
-
-    return 'none';
-  }
-
   private updateIsSet(fieldName: string, value: boolean) {
-    const writeOnlyFields = this.props.remote.write_only_fields;
-    const newFields: WriteOnlyFieldType[] = [];
+    const { remote, remoteType } = this.props;
+    const hiddenFieldsName =
+      remoteType === 'ansible-remote' ? 'hidden_fields' : 'write_only_fields';
 
-    for (const field of writeOnlyFields) {
-      if (field.name === fieldName) {
-        field.is_set = value;
-      }
+    const newFields: WriteOnlyFieldType[] = remote[hiddenFieldsName].map(
+      (field) =>
+        field.name === fieldName ? { ...field, is_set: value } : field,
+    );
 
-      newFields.push(field);
-    }
-
-    const update = { ...this.props.remote };
-    update.write_only_fields = newFields;
-    update[fieldName] = null;
-
-    this.props.updateRemote(update);
+    this.props.updateRemote({
+      ...remote,
+      [fieldName]: null,
+      [hiddenFieldsName]: newFields,
+    });
   }
 
   private updateRemote(value, field) {
+    const { remote } = this.props;
+
     const numericFields = ['download_concurrency', 'rate_limit'];
     if (numericFields.includes(field)) {
       value = Number.isInteger(value)
@@ -772,9 +827,7 @@ export class RemoteForm extends React.Component<IProps, IState> {
         : parseInt(value, 10);
     }
 
-    const update = { ...this.props.remote };
-    update[field] = value;
-    this.props.updateRemote(update);
+    this.props.updateRemote({ ...remote, [field]: value });
   }
 
   private toError(validated: boolean) {

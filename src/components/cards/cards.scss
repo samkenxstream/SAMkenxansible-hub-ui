@@ -22,6 +22,15 @@
     display: block;
   }
 
+  .card-badge-area {
+    display: flex;
+    justify-content: end;
+    gap: 5px;
+    flex-wrap: wrap;
+    align-content: stretch;
+    align-items: center;
+  }
+
   .name {
     font-weight: bold;
     text-overflow: ellipsis;
@@ -49,14 +58,14 @@
       color: var(--pf-global--info-color--100);
       margin-right: 3px;
     }
-
-    .hub-signature-badge {
-      margin-left: 5px;
-    }
   }
 
   .description {
     height: 48px;
     overflow: hidden;
   }
+}
+
+.hidden-menu-space {
+  margin-right: 8px;
 }
